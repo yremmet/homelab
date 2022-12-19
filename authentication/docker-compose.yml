@@ -1,0 +1,100 @@
+version: '3.5'
+services:
+  authelia:
+    image: authelia/authelia
+    container_name: authelia
+    depends_on:
+      - lldap
+    volumes:
+      - ./config:/config
+      - authelia:/data
+    networks:
+      - proxy
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.authelia.rule=Host(`authelia.$DOMAIN1`)'
+      - 'traefik.http.routers.authelia.entrypoints=websecure'
+      - 'traefik.http.routers.authelia.tls=true'
+      - 'traefik.http.routers.authelia.tls.options=default'
+
+    expose:
+      - 9091
+    ports:
+      - 9091:9091
+    restart: unless-stopped
+      #    command:
+      #- cat
+      #- /run/secrets/LDAP_PASSWORD
+    healthcheck:
+      disable: true
+    environment:
+      TZ: $TZ 
+      AUTHELIA_JWT_SECRET_FILE: /run/secrets/JWT_SECRET
+      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/SESSION_SECRET
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/ENCRYPTION_KEY
+      AUTHELIA_AUTHENTICATION_BACKEND_LDAP_PASSWORD_FILE: /run/secrets/AUTHELIA_BIND_PW
+      AUTHELIA_SESSION_DOMAIN: $DOMAIN1
+    secrets: [JWT_SECRET, SESSION_SECRET, ENCRYPTION_KEY, AUTHELIA_BIND_PW]
+
+  lldap:
+    image: nitnelave/lldap:stable
+    container_name: ldap
+    networks:
+      - proxy
+    ports:
+      # For LDAP
+      - "3890:3890"
+      # For the web front-end
+      - "17170:17170"
+    volumes:
+      - "lldap:/data"
+      # Alternatively, you can mount a local folder
+      # - "./lldap_data:/data"
+    environment:
+      - UID=1000
+      - GID=1000
+      - TZ=$TZ
+      - LLDAP_JWT_SECRET=$LDAP_JWT
+      - LLDAP_LDAP_USER_PASS=$LDAP_PW
+      - LLDAP_LDAP_USER_DN=admin
+      - LLDAP_LDAP_BASE_DN=dc=bad-gateway,dc=online
+      - LLDAP_HTTP_URL=https://ldap.$DOMAIN
+      # Mail CONFIG
+      - LLDAP_SMTP_OPTIONS__USER=$MAIL_USER
+      - LLDAP_SMTP_OPTIONS__PASSWORD=$MAIL_PASSWORD
+      - LLDAP_SMTP_OPTIONS__SERVER=$SMTP_SERVER
+      - LLDAP_SMTP_OPTIONS__PORT=$SMTP_PORT
+      - LLDAP_SMTP_OPTIONS__SMPT_ENCRYPTION="TLS"
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.ldap.rule=Host(`ldap.$DOMAIN1`)'
+      - 'traefik.http.routers.ldap.entrypoints=websecure'
+      - 'traefik.http.routers.ldap.tls=true'
+      - 'traefik.http.routers.ldap.tls.options=default'
+      - 'traefik.http.services.lldap-authentication.loadbalancer.server.port=17170'
+secrets:
+  JWT_SECRET:
+    file: /mnt/data/secrets/docker01/authelia/jwt_secret
+  ENCRYPTION_KEY:
+    file: /mnt/data/secrets/docker01/authelia/encryption_key
+  AUTHELIA_BIND_PW:
+    file: /mnt/data/secrets/docker01/authelia/ldap_password
+  SESSION_SECRET:
+    file: /mnt/data/secrets/docker01/authelia/session_secret
+volumes:
+  authelia:
+    driver: rclone:latest
+    driver_opts:
+      remote: 'storage-docker:/docker/authelia'
+      vfs_cache_mode: 'writes'
+      allow_other: 'true'
+
+  lldap:
+    driver: rclone:latest
+    driver_opts:
+      remote: 'storage-docker:/docker/lldap'
+      vfs_cache_mode: 'writes'
+      allow_other: 'true'
+networks:
+  proxy:
+    external: true

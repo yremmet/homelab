@@ -1,0 +1,29 @@
+version: '3.5'
+services:
+  homepage:
+    image: ghcr.io/benphelps/homepage:latest
+    container_name: homepage
+    ports:
+      - 3000:3000
+    volumes:
+      - config:/app/config # Make sure your local config directory exists
+      - /var/run/docker.sock:/var/run/docker.sock # (optional) For docker integration
+    networks:
+    - proxy
+    labels:
+    - traefik.enable=true
+    - traefik.docker.network=proxy
+    - traefik.port=3000
+    - traefik.http.routers.plex.rule=Host(`bad-gateway.online`)
+    - traefik.http.routers.plex.tls.certresolver=myresolver
+volumes:
+  config:
+    driver: rclone:latest
+    driver_opts:
+      remote: 'storage-docker:/docker/homepage'
+      allow_other: 'true'
+        #      vfs_cache_mode: full
+
+networks:
+  proxy:
+    external: true

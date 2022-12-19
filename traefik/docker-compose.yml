@@ -1,0 +1,104 @@
+version: "3.3"
+
+services:
+  traefik:
+    image: "traefik:v2.9"
+    restart: unless-stopped
+    container_name: "traefik"
+    networks:
+      - proxy
+    volumes:
+      - "data:/config"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.file.directory=/config"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entryPoints.postgres.address=:5432/tcp"
+      - "--certificatesresolvers.myresolver.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesResolvers.certbot.acme.storage=/config/acme-v2.json"
+
+    environment:
+    - CF_API_EMAIL=$CF_EMAIL
+    - CF_API_KEY=$CF_TOKEN
+
+    ports:
+      - 443:443
+      - 80:80
+      - 5432:5432
+      - 8080:8080
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`net.$DOMAIN`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=myresolver"
+      - "traefik.http.services.api.loadbalancer.server.port=8080"
+      - 'traefik.http.routers.dashboard.middlewares=authelia@docker'
+
+      - 'traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/verify?rd=https://authelia.$DOMAIN'  # yamllint disable-line rule:line-length
+      - 'traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true'
+      - 'traefik.http.middlewares.authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email'  # yamllint disable-line rule:line-length
+      - 'traefik.http.middlewares.basic.forwardauth.address=http://authelia:9091/api/verify?auth=basic&rd=https://authelia.$DOMAIN'  # yamllint disable-line rule:line-length
+      - 'traefik.http.middlewares.basic.forwardauth.trustForwardHeader=true'
+      - 'traefik.http.middlewares.basic.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Name,Remote-Email'  # yamllint disable-line rule:line-length 
+      # Middleware
+      - traefik.http.middlewares.mediaheaders.headers.stsSeconds=315360000
+      - traefik.http.middlewares.mediaheaders.headers.sslredirect=true
+      - traefik.http.middlewares.mediaheaders.headers.browserXssFilter=true
+      - traefik.http.middlewares.mediaheaders.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.mediaheaders.headers.forceSTSHeader=true
+      - traefik.http.middlewares.mediaheaders.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.mediaheaders.headers.stsPreload=true
+  # Cloudflare DDNS - Dynamic DNS Updater
+  cf-ddns:
+    container_name: cf-ddns
+    image: oznu/cloudflare-ddns:latest
+    restart: unless-stopped
+    environment:
+      API_KEY: $CF_DDNS_TOKEN
+      ZONE: $DOMAIN
+      PROXIED: "true"
+      RRTYPE: A
+      DELETE_ON_STOP: "false"
+      DNS_SERVER: 1.1.1.1
+  cf-companion:
+    container_name: cf-companion
+    image: tiredofit/traefik-cloudflare-companion:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+    - TIMEZONE=$TZ
+    - TRAEFIK_VERSION=2
+    - CF_EMAIL=$CF_EMAIL
+    - CF_TOKEN=$CF_TOKEN
+    - TARGET_DOMAIN=$DOMAIN
+    - DOMAIN1=$DOMAIN
+    - DOMAIN1_ZONE_ID=$CF_ZONE
+    - DOMAIN1_PROXIED=TRUE
+    - REFRESH_ENTRIES=TRUE
+ 
+  whoami:
+    image: "traefik/whoami"
+    container_name: "simple-service"
+    networks:
+    - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`test.$DOMAIN`)"
+      - "traefik.http.routers.whoami.entrypoints=websecure,web"
+      - "traefik.http.routers.whoami.tls.certresolver=myresolver"
+networks:
+  proxy:
+    external: true
+volumes:
+  data:
+    driver: rclone:latest
+    driver_opts:
+      remote: 'storage-docker:/traefik'
+      allow_other: 'true'
+      vfs_cache_mode: full

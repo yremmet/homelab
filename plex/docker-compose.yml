@@ -1,0 +1,64 @@
+version: '3.5'
+
+services:
+  plex:
+    container_name: plex
+    restart: unless-stopped
+    image: plexinc/pms-docker
+    volumes:
+    - config:/config
+    - /mnt/media:/media
+    - /mnt/media-nas:/media-nas
+    - transcode:/transcode
+    ports:
+    - 32400:32400/tcp
+    - 3005:3005/tcp
+    - 8324:8324/tcp
+    - 32469:32469/tcp
+    - 1900:1900/udp
+    - 32410:32410/udp
+    - 32412:32412/udp
+    - 32413:32413/udp
+    - 32414:32414/udp
+    environment:
+     - TZ=Europe/London
+     - HOSTNAME=Docker
+     - PLEX_CLAIM=claim--xVZatmRLyyWk96Vyk2Q
+     - PLEX_UID=1000
+     - PLEX_GID=1000
+     - NVIDIA_VISIBLE_DEVICES=all
+     - NVIDIA_DRIVER_CAPABILITIES=all
+       # - ADVERTISE_IP=http://10.10.28.15:32400
+ 
+    deploy:
+      resources:
+        reservations:
+          devices: #[]
+           - capabilities: [gpu]
+    networks:
+    - proxy
+    labels:
+    - traefik.enable=true
+    # ROUTER
+    - traefik.http.routers.plex.rule=Host(`plex.$DOMAIN1`)
+    - traefik.http.routers.plex.middlewares=mediaheaders
+    - traefik.http.routers.plex.tls.certresolver=myresolver
+    - traefik.http.routers.plex.entrypoints=websecure
+    - traefik.http.services.plex.loadbalancer.server.port=32400
+volumes:
+  config:
+    driver: rclone:latest
+    driver_opts:
+      remote: 'storage-docker:/docker/plex'
+      allow_other: 'true'
+      vfs_cache_mode: full
+
+  transcode:
+    driver: rclone:latest
+    driver_opts:
+      remote: 'storage-docker:/docker/plex-transcode'
+      allow_other: 'true'
+        #    vfs_cache_mode: off
+networks:
+  proxy:
+    external: true
