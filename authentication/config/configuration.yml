@@ -56,7 +56,7 @@ access_control:
       policy: one_factor    
     - domain: plex.bad-gateway.online
       policy: bypass
-    - domain: traefik.example.com
+    - domain: net.bad-gateway.online
       policy: one_factor
     - domain: secure.example.com
       policy: two_factor
